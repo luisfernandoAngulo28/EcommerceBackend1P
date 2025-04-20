@@ -1,5 +1,5 @@
 from flask import Blueprint, jsonify, request, session
-from ..models.models import User, Product, Cart
+from models.models import User, Product, Cart
 client_bp = Blueprint('client', __name__)
 
 # Endpoint para registrar un usuario

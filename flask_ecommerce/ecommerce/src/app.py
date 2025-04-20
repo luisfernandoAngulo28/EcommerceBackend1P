@@ -1,6 +1,6 @@
 from flask import Flask
-from .admin import admin_bp  # Importa usando ruta relativa
-from .api.routes import client_bp  # Importa usando ruta relativa
+from admin import admin_bp  # Importa usando ruta relativa
+from app.routes import client_bp  # Importa usando ruta relativa
 
 app = Flask(__name__)
 app.secret_key = 'secret_key'

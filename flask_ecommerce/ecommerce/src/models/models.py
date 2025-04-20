@@ -1,5 +1,7 @@
 import bcrypt
-from ..connections import get_db
+from connections import get_db
+
+
 
 class User:
     @staticmethod
