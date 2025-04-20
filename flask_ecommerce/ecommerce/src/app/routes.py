@@ -1,8 +1,10 @@
 from flask import Blueprint, jsonify, request, session
+from flask_cors import CORS
 from models.models import User, Product, Cart
 import bcrypt
 from connections import get_db
 client_bp = Blueprint('client', __name__)
+CORS(client_bp)
 
 
 # Endpoint para registrar un usuario
