@@ -1,9 +1,12 @@
 from flask import Blueprint, jsonify, request
+from flask_cors import CORS
 from connections import connection 
 #from connections import connection
 
 #from .connections import connection
 admin_bp = Blueprint('admin', __name__)
+CORS(admin_bp, resources={r"/*": {"origins": "*"}})
+
 
 def get_db():
     return connection

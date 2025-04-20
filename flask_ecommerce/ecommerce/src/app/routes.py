@@ -1,6 +1,8 @@
 from flask import Blueprint, jsonify, request, session
+from flask_cors import CORS
 from models.models import User, Product, Cart
 client_bp = Blueprint('client', __name__)
+CORS(client_bp)
 
 # Endpoint para registrar un usuario
 @client_bp.route('/register', methods=['POST'])

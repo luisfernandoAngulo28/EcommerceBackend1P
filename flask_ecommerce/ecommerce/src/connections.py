@@ -6,7 +6,7 @@ try:
     connection = psycopg2.connect(
         host='localhost',
         user='postgres',
-        password='12345678',
+        password='job123',
         database='BDEcommerce'
     )
     connection.autocommit = True
