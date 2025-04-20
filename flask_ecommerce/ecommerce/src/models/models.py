@@ -2,7 +2,6 @@ import bcrypt
 from connections import get_db
 
 
-
 class User:
     @staticmethod
     def create(username, email, password):
@@ -30,6 +29,13 @@ class User:
         except Exception as e:
             print(f"Error al buscar usuario: {e}")
             return None
+
+    @staticmethod
+    def verify_password(plain_password, hashed_password):
+        """
+        Verifica si la contraseña proporcionada coincide con la contraseña hash almacenada.
+        """
+        return bcrypt.checkpw(plain_password.encode(), hashed_password.encode())
 
 
 class Product:
