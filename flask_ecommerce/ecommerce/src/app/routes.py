@@ -68,16 +68,26 @@ def login():
 @client_bp.route('/api/products', methods=['GET'])
 def get_products():
     try:
-        products = Product.get_all()
-        return jsonify({
-            'success': True,
-            'products': products
-        }), 200
+        with get_db() as conn:
+            with conn.cursor() as cur:
+                cur.execute("SELECT * FROM products")
+                rows = cur.fetchall()
+
+                # Convertir los resultados en una lista de diccionarios
+                products = []
+                for row in rows:
+                    product = {
+                        'id': row[0],
+                        'name': row[1],
+                        'price': row[2],
+                        'description': row[3],
+                        'image_url': row[4],
+                    }
+                    products.append(product)
+
+                return jsonify({'success': True, 'products': products}), 200
     except Exception as e:
-        return jsonify({
-            'success': False,
-            'message': f'Error al obtener los productos: {str(e)}'
-        }), 500
+        return jsonify({'success': False, 'message': f'Error al obtener los productos: {str(e)}'}), 500
 
 
 # Endpoint para agregar un producto al carrito
