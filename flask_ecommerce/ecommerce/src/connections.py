@@ -5,9 +5,11 @@ from psycopg2 import DatabaseError
 try:
     connection = psycopg2.connect(
         host='localhost',
+        port=5432,
         user='postgres',
         password='12345678',
         database='BDEcommerce'
+        
     )
     connection.autocommit = True
     print("Conexión exitosa.")

@@ -19,9 +19,6 @@ app.secret_key = 'secret_key'
 app.register_blueprint(client_bp, url_prefix="/api/client")
 app.register_blueprint(admin_bp, url_prefix="/api/admin")
 
-if __name__ == '__main__':
-    app.run(debug=True, host='0.0.0.0', port=5001)
-
 @app.after_request
 def after_request(response):
     response.headers.add('Access-Control-Allow-Origin', 'http://localhost:4200')
@@ -29,3 +26,6 @@ def after_request(response):
     response.headers.add('Access-Control-Allow-Methods', 'GET,PUT,POST,DELETE,OPTIONS')
     response.headers.add('Access-Control-Allow-Credentials', 'true')
     return response
+
+if __name__ == '__main__':
+    app.run(debug=True, host='0.0.0.0', port=5001)

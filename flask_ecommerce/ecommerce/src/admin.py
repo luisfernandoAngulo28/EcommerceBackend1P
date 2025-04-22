@@ -1,19 +1,75 @@
 from flask import Blueprint, jsonify, request
 from flask_cors import CORS
-from connections import connection 
-#from connections import connection
+from connections import db_fetchone, get_db
+import bcrypt
+from config import SECRET_KEY
+import jwt  # Importa la biblioteca JWT
+from datetime import datetime, timedelta 
+from middleware import authenticate_admin_token
 
-#from .connections import connection
 admin_bp = Blueprint('admin', __name__)
 CORS(admin_bp, resources={r"/*": {"origins": "*"}})
 
+# Endpoint para iniciar sesión como administrador
+@admin_bp.route('/login', methods=['POST'])
+def admin_login():
+    data = request.get_json()
+    email = data.get('email')
+    password = data.get('password')
 
-def get_db():
-    return connection
+    if not all([email, password]):
+        return jsonify({'success': False, 'message': 'Correo y contraseña son requeridos.'}), 400
+
+    try:
+        with get_db() as conn:
+            with conn.cursor() as cur:
+                # Buscar al usuario por correo electrónico
+                cur.execute("SELECT * FROM users WHERE email = %s", (email,))
+                user = cur.fetchone()
+
+                if not user:
+                    return jsonify({'success': False, 'message': 'Usuario no encontrado.'}), 401
+
+                # Verificar si el usuario es administrador
+                if user[4] != 'admin':
+                    return jsonify({'success': False, 'message': 'No eres un administrador.'}), 401
+
+                # Verificar la contraseña
+                stored_hash = user[3]  # Suponiendo que el hash está en la columna 3
+                if not bcrypt.checkpw(password.encode(), stored_hash.encode()):
+                    return jsonify({'success': False, 'message': 'Contraseña incorrecta.'}), 401
+
+                # Generar un token JWT
+                payload = {
+                    'user_id': user[0],  # ID del usuario
+                    'exp': datetime.utcnow() + timedelta(hours=24)  # Token válido por 24 horas
+                }
+                token = jwt.encode(payload, SECRET_KEY, algorithm='HS256')
+
+                # Actualizar el token en la base de datos
+                cur.execute("UPDATE users SET token = %s WHERE id = %s", (token, user[0]))
+                conn.commit()
+
+                # Devolver la respuesta con el token
+                return jsonify({
+                    'success': True,
+                    'message': 'Inicio de sesión exitoso como administrador.',
+                    'user': {
+                        'id': user[0],
+                        'username': user[1],
+                        'email': user[2],
+                        'role': user[4]
+                    },
+                    'token': token  # Devuelve el token generado
+                }), 200
+
+    except Exception as e:
+        return jsonify({'success': False, 'message': f'Error en inicio de sesión: {str(e)}'}), 500
 
 # Ruta para el dashboard (estadísticas generales)
-@admin_bp.route('/api/admin/dashboard', methods=['GET'])
-def dashboard():
+@admin_bp.route('/dashboard', methods=['GET'])
+@authenticate_admin_token  # Protege la ruta con el middleware
+def dashboard(user_id):
     try:
         conn = get_db()
         cur = conn.cursor()
@@ -49,8 +105,9 @@ def dashboard():
         }), 500
 
 # Ruta para listar productos
-@admin_bp.route('/api/admin/products', methods=['GET'])
-def products():
+@admin_bp.route('/products', methods=['GET'])
+@authenticate_admin_token  # Protege la ruta con el middleware
+def products(user_id):
     try:
         conn = get_db()
         cur = conn.cursor()
@@ -84,8 +141,9 @@ def products():
         }), 500
 
 # Ruta para agregar un producto
-@admin_bp.route('/api/admin/products/add', methods=['POST'])
-def add_product():
+@admin_bp.route('/products/add', methods=['POST'])
+@authenticate_admin_token  # Protege la ruta con el middleware
+def add_product(user_id):
     data = request.get_json()
     name = data.get('name')
     description = data.get('description')
@@ -109,14 +167,23 @@ def add_product():
         }), 400
 
     try:
-        conn = get_db()
-        cur = conn.cursor()
-        cur.execute(
-            "INSERT INTO products (name, description, price, stock, image_url) VALUES (%s, %s, %s, %s, %s)",
-            (name, description, price, stock, image_url)
-        )
-        conn.commit()
-        conn.close()
+        # Consultar el valor máximo actual de id
+        query_max_id = "SELECT MAX(id) FROM products"
+        max_id = db_fetchone(query_max_id)[0] or 0  # Si no hay registros, usar 0
+        new_id = max_id + 1  # Calcular el nuevo id
+
+        # Insertar el nuevo producto con el id generado manualmente
+        query = """
+            INSERT INTO products (id, name, description, price, stock, image_url)
+            VALUES (%s, %s, %s, %s, %s, %s)
+        """
+        params = (new_id, name, description, price, stock, image_url)
+
+        # Usar un administrador de contexto para manejar la conexión
+        with get_db() as conn:
+            with conn.cursor() as cur:
+                cur.execute(query, params)
+                conn.commit()
 
         return jsonify({
             "success": True,
@@ -124,16 +191,15 @@ def add_product():
         }), 201
 
     except Exception as e:
-        conn.rollback()
-        conn.close()
         return jsonify({
             "success": False,
             "message": f"Error al agregar el producto: {str(e)}"
         }), 500
 
 # Ruta para editar un producto
-@admin_bp.route('/api/admin/products/edit/<int:id>', methods=['PUT'])
-def edit_product(id):
+@admin_bp.route('/products/edit/<int:id>', methods=['PUT'])
+@authenticate_admin_token  # Protege la ruta con el middleware
+def edit_product(user_id, id):
     data = request.get_json()
     name = data.get('name')
     description = data.get('description')
@@ -141,6 +207,7 @@ def edit_product(id):
     stock = data.get('stock')
     image_url = data.get('image_url')
 
+    # Validar que todos los campos estén presentes
     if not all([name, description, price, stock, image_url]):
         return jsonify({
             "success": False,
@@ -148,6 +215,7 @@ def edit_product(id):
         }), 400
 
     try:
+        # Validar que el precio y el stock sean números válidos
         price = float(price)
         stock = int(stock)
     except ValueError:
@@ -157,18 +225,25 @@ def edit_product(id):
         }), 400
 
     try:
-        conn = get_db()
-        cur = conn.cursor()
-        cur.execute(
-            """
-            UPDATE products 
-            SET name=%s, description=%s, price=%s, stock=%s, image_url=%s 
-            WHERE id=%s
-            """,
-            (name, description, price, stock, image_url, id)
-        )
-        conn.commit()
-        conn.close()
+        # Usar un administrador de contexto para manejar la conexión
+        with get_db() as conn:
+            with conn.cursor() as cur:
+                # Ejecutar la consulta UPDATE
+                query = """
+                    UPDATE products 
+                    SET name=%s, description=%s, price=%s, stock=%s, image_url=%s 
+                    WHERE id=%s
+                """
+                cur.execute(query, (name, description, price, stock, image_url, id))
+                
+                # Verificar si se actualizó algún registro
+                if cur.rowcount == 0:
+                    return jsonify({
+                        "success": False,
+                        "message": f"No se encontró ningún producto con el ID {id}."
+                    }), 404
+                
+                conn.commit()
 
         return jsonify({
             "success": True,
@@ -176,22 +251,31 @@ def edit_product(id):
         }), 200
 
     except Exception as e:
-        conn.rollback()
-        conn.close()
         return jsonify({
             "success": False,
             "message": f"Error al actualizar el producto: {str(e)}"
         }), 500
 
 # Ruta para eliminar un producto
-@admin_bp.route('/api/admin/products/delete/<int:id>', methods=['DELETE'])
-def delete_product(id):
+@admin_bp.route('/products/delete/<int:id>', methods=['DELETE'])
+@authenticate_admin_token  # Protege la ruta con el middleware
+def delete_product(user_id, id):
     try:
-        conn = get_db()
-        cur = conn.cursor()
-        cur.execute("DELETE FROM products WHERE id=%s", (id,))
-        conn.commit()
-        conn.close()
+        # Usar un administrador de contexto para manejar la conexión
+        with get_db() as conn:
+            with conn.cursor() as cur:
+                # Ejecutar la consulta DELETE
+                query = "DELETE FROM products WHERE id=%s"
+                cur.execute(query, (id,))
+                
+                # Verificar si se eliminó algún registro
+                if cur.rowcount == 0:
+                    return jsonify({
+                        "success": False,
+                        "message": f"No se encontró ningún producto con el ID {id}."
+                    }), 404
+                
+                conn.commit()
 
         return jsonify({
             "success": True,
@@ -199,8 +283,6 @@ def delete_product(id):
         }), 200
 
     except Exception as e:
-        conn.rollback()
-        conn.close()
         return jsonify({
             "success": False,
             "message": f"Error al eliminar el producto: {str(e)}"
